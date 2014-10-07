@@ -17,7 +17,6 @@ class Crime(thinkbayes2.Suite):
         #Assuming that for this case, the hypothesis is correct
         time = data[0]
         characterTuples = data [1:]
-        print (characterTuples)
          
         for charTup in characterTuples:
             if hypo == charTup[0]:
