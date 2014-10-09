@@ -16,6 +16,17 @@ from itertools import product
 
 class Gps(thinkbayes2.Suite, thinkbayes2.Joint):
     """Represents hypotheses about your location in the field."""
+    def __init__(self, hypos):
+        self.mean = 0
+        self.std = 0
+        """Initialize self.
+
+        hypos: sequence of string bowl IDs
+        """
+        thinkbayes2.Pmf.__init__(self)
+        for hypo in hypos:
+            self.Set(hypo, 1)
+        self.Normalize()
 
     def Likelihood(self, data, hypo):
         """Computes the likelihood of the data under the hypothesis.
