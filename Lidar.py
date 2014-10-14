@@ -12,7 +12,8 @@ import thinkbayes2
 from pylab import *
 import numpy as np
 import matplotlib.pyplot as plt
-
+import serial
+import time
 from itertools import product
 
 
@@ -37,23 +38,25 @@ class Lidar(thinkbayes2.Suite, thinkbayes2.Joint):
         data: angle, measured distance pairs.
         """
         actualr, actualtheta = hypo
-        measuredr, measuredtheta = data
+
 
         for pair in data:
             if  pair[1]== actualtheta:
                 #assume that there is no error for theta
                 #calculate the error in measured r for a given hypothetical r
-                errorr = pair[0] - actualr
+                measureddist = pair[0]
+                errorr = measureddist - actualr
 
-                #come up with a better way of doing this.
-                mean = 0
-                std = 1,
+                #Mean and STD calculated based on distance 
+                mean = 0.0054*measureddist**2 - 0.4089*measureddist + 6.8076
+                std = 0.1211*measureddist - 3.2346,
 
                 liker = thinkbayes2.EvalNormalPdf(errorr, mean, std)
             else:
                 #This shouldn't happen, the way that we're planning to pass in data
-                liker = 0.000001
-
+                #We'll want to make sure we have a plan for if this does happen.
+                liker = 0
+        #print (actualr,actualtheta,liker)
         return liker
 
 
@@ -62,8 +65,8 @@ def plotPolar(joint):
     likeDict = joint.GetDict()
  
 
-    rsarray = np.linspace(1,100,50)
-    thetasarray = np.arange(0,361)
+    rsarray = np.linspace(20,150,50)
+    thetasarray = np.arange(0,85)
     thetasradarray = np.radians(thetasarray)
 
     rs,thetasrads = np.meshgrid(thetasradarray, rsarray)
@@ -73,6 +76,7 @@ def plotPolar(joint):
         for indextheta,theta in enumerate(thetasarray):
 
             likes[indexr][indextheta] = likeDict[r,theta]
+            print (r,theta,likes[indexr][indextheta])
 
 
     fig, ax = plt.subplots(subplot_kw=dict(projection='polar'))
@@ -80,23 +84,69 @@ def plotPolar(joint):
 
     plt.show()
 
+def getSweepData(angleRange):
+    #For Linux (I think)
+    #ser=serial.Serial('/dev/ttyACM0', 9600) #Defines the serial port to use 
+    #For Mac
+    ser=serial.Serial('/dev/tty.usbmodem1411', 9600) #Defines the serial port to use 
+    time.sleep(1)
+
+    ser.write('4') #Sets the servo over to its home position on the right
+    time.sleep(0.5) #Waits half a second to ensure the arduino is ready for next command
+    readings = []
+
+    horzAngle=range(0, angleRange-5) #(so we don't fight the servo) creates the horizontal range of angles that the servo should sweep through
+
+    for eachHorizontalAngle in horzAngle:
+        #print ('getting reading')
+        ser.write('5') #Tells the arduino to send back a distance reading
+        time.sleep(0.5)
+        try:
+            distance_response=ser.readline() #Receives the distance reading from the arduino
+            cleanReading=distance_response[2:-2] #Removes the last 2 characters ("\r\n") from the arduino output
+            #distance=float(cleanReading) #Type-casts it as an float so that it can be plotted
+            #print ('clean' + str(cleanReading))
+            distance = arduinoOutputToDistance(int(cleanReading))
+            print (eachHorizontalAngle)
+            readings.append((distance, eachHorizontalAngle))
+        except Exception, e:
+            print ('did not work' +  str(eachHorizontalAngle))
+        else:
+            pass
+        finally:
+            pass
+        
+        
+        
+        #print('Moving left')
+        ser.write('2') #Moves the servo one degree to the left after taking a reading
+    time.sleep(0.5)
+    ser.write('4') #reset servo
+    return readings
+   
+ 
+def arduinoOutputToDistance(output):
+    outputVoltage = output*5.0/1023
+    distance = 32.336*outputVoltage**(-0.845)
+    return distance
 
 def main():
-    rs = np.linspace(1,100,50)
-    thetas = np.arange(0,361)
+    rs = np.linspace(20,150,50)
+    thetas = np.arange(0,85)
     joint = Lidar(product(rs, thetas))
 
-    data = ((15, 10),(16,10))
+    data = getSweepData(90)
+    print (data)
 
     joint.Update(data)
     
     # thinkplot.Contour(joint.GetDict(), contour=False, pcolor=True)
     # thinkplot.Show(xlabel='X', ylabel='Y')
 
-    data = ((15,12),(16,12))
-
     joint.Update(data)
 
+    for hypo, prob in joint.Items():
+        print(hypo, prob)
 
     plotPolar(joint)
 
