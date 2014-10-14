@@ -16,7 +16,7 @@ import time
 from itertools import product
 
 
-def getSweepData(realDist,angleRange):
+def getSweepData(realDist,numdata):
     #For Linux (I think)
     #ser=serial.Serial('/dev/ttyACM0', 9600) #Defines the serial port to use 
     #For Mac

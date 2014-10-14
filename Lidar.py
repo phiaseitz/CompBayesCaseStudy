@@ -1,12 +1,4 @@
-"""This file contains code for use with "Think Bayes",
-by Allen B. Downey, available from greenteapress.com
-
-Copyright 2014 Allen B. Downey
-License: GNU GPLv3 http://www.gnu.org/licenses/gpl.html
-"""
-
 from __future__ import print_function, division
-
 import numpy
 import thinkbayes2
 from pylab import *
@@ -38,8 +30,8 @@ class Lidar(thinkbayes2.Suite, thinkbayes2.Joint):
         data: angle, measured distance pairs.
         """
         actualr, actualtheta = hypo
-
-
+        #We shouldn't ever be able to greturn like = 0, but we have to make sure
+        like = 0
         for pair in data:
             if  pair[1]== actualtheta:
                 #assume that there is no error for theta
@@ -51,13 +43,10 @@ class Lidar(thinkbayes2.Suite, thinkbayes2.Joint):
                 mean = 0.0054*measureddist**2 - 0.4089*measureddist + 6.8076
                 std = 0.1211*measureddist - 3.2346,
 
-                liker = thinkbayes2.EvalNormalPdf(errorr, mean, std)
-            else:
-                #This shouldn't happen, the way that we're planning to pass in data
-                #We'll want to make sure we have a plan for if this does happen.
-                liker = 0
+                like = thinkbayes2.EvalNormalPdf(errorr, mean, std)
+                return like
         #print (actualr,actualtheta,liker)
-        return liker
+        return like
 
 
 def plotPolar(joint):
