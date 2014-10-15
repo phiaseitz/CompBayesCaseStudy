@@ -8,8 +8,12 @@ import serial
 import time
 from itertools import product
 
+maxAngle = 80
+minRange = 20
+maxRange = 150
+numPoints = 50
 
-class Lidar(thinkbayes2.Suite, thinkbayes2.Joint):
+class Lidar(thinkbayes2.Suite):
     """Represents hypotheses about the location of objects sensor is at 0,0."""
     def __init__(self, hypos):
         self.mean = 0
@@ -25,47 +29,56 @@ class Lidar(thinkbayes2.Suite, thinkbayes2.Joint):
     def Likelihood(self, data, hypo):
         """Computes the likelihood of the data under the hypothesis.
 
-        hypo: r,theta coordinates where there might be an object
-        (r is in cm)
-        data: angle, measured distance pairs.
+        hypo: hypothetical distance
+        data: measured distance.
         """
-        actualr, actualtheta = hypo
-        #We shouldn't ever be able to greturn like = 0, but we have to make sure
-        like = 0
-        for pair in data:
-            if  pair[1]== actualtheta:
-                #assume that there is no error for theta
-                #calculate the error in measured r for a given hypothetical r
-                measureddist = pair[0]
-                errorr = measureddist - actualr
 
-                #Mean and STD calculated based on distance 
-                mean = 0.0054*measureddist**2 - 0.4089*measureddist + 6.8076
-                std = 0.1211*measureddist - 3.2346,
+        error = data - hypo
+        #Mean and STD calculated based on distance 
+        mean = 0.0054*hypo**2 - 0.4089*hypo + 6.8076
+        std = 0.1211*hypo - 3.2346
 
-                like = thinkbayes2.EvalNormalPdf(errorr, mean, std)
-                return like
-        #print (actualr,actualtheta,liker)
+        like = thinkbayes2.EvalNormalPdf(error, mean, std)
+        if math.isnan(like):
+            like = 5e-50
+
+        #print (hypo, data,like)
         return like
 
+def UpdateSuites(suites, data):
+    for measurement in data:
+        r = measurement[0]
+        theta = measurement[1]
+        suite = suites[theta]
+        suite.Update(r)
 
-def plotPolar(joint):
 
-    likeDict = joint.GetDict()
- 
-
-    rsarray = np.linspace(20,150,50)
-    thetasarray = np.arange(0,85)
+def plotPolar(suites):
+    rsarray = np.linspace(minRange,maxRange,numPoints)
+    thetasarray = np.arange(0,maxAngle)
     thetasradarray = np.radians(thetasarray)
 
     rs,thetasrads = np.meshgrid(thetasradarray, rsarray)
     likes = np.zeros((rsarray.size,thetasarray.size))
+    # print (rsarray)
+    # for theta,suite in enumerate(suites):
+    #     for hypo, prob in suite.Items():
+    #         likes[np.where(rsarray == hypo)][theta] = prob
+    # print (likeDicts)
 
-    for indexr,r in enumerate(rsarray):
-        for indextheta,theta in enumerate(thetasarray):
+    for theta in thetasarray:
+        currentSuite = suites[theta]
+        for indexr,r in enumerate(rsarray):
+            #print(currentSuite.Prob(r))
+            likes[indexr][theta] = currentSuite.Prob(r)
+    
+    # for indextheta,theta in enumerate(thetasarray):
+    #     likeDict = likeDicts[theta]
+    #     print (likeDict)
+    #     for indexr,r in enumerate(rsarray):
+    #         print (likeDict[r])
+    #         #likes[indexr][indextheta] = likeDict[r]
 
-            likes[indexr][indextheta] = likeDict[r,theta]
-            print (r,theta,likes[indexr][indextheta])
 
 
     fig, ax = plt.subplots(subplot_kw=dict(projection='polar'))
@@ -84,12 +97,12 @@ def getSweepData(angleRange):
     time.sleep(0.5) #Waits half a second to ensure the arduino is ready for next command
     readings = []
 
-    horzAngle=range(0, angleRange-5) #(so we don't fight the servo) creates the horizontal range of angles that the servo should sweep through
+    horzAngle=range(0, angleRange) #(so we don't fight the servo) creates the horizontal range of angles that the servo should sweep through
 
     for eachHorizontalAngle in horzAngle:
         #print ('getting reading')
         ser.write('5') #Tells the arduino to send back a distance reading
-        time.sleep(0.5)
+        time.sleep(0.3)
         try:
             distance_response=ser.readline() #Receives the distance reading from the arduino
             cleanReading=distance_response[2:-2] #Removes the last 2 characters ("\r\n") from the arduino output
@@ -97,9 +110,12 @@ def getSweepData(angleRange):
             #print ('clean' + str(cleanReading))
             distance = arduinoOutputToDistance(int(cleanReading))
             print (eachHorizontalAngle)
+            if math.isnan(distance):
+                distance = maxRange
             readings.append((distance, eachHorizontalAngle))
         except Exception, e:
             print ('did not work' +  str(eachHorizontalAngle))
+            readings.append((maxRange, eachHorizontalAngle))
         else:
             pass
         finally:
@@ -109,6 +125,7 @@ def getSweepData(angleRange):
         
         #print('Moving left')
         ser.write('2') #Moves the servo one degree to the left after taking a reading
+        time.sleep(0.3)
     time.sleep(0.5)
     ser.write('4') #reset servo
     return readings
@@ -120,29 +137,21 @@ def arduinoOutputToDistance(output):
     return distance
 
 def main():
-    rs = np.linspace(20,150,50)
-    thetas = np.arange(0,85)
-    joint = Lidar(product(rs, thetas))
+    rs = np.linspace(minRange,maxRange,numPoints)
+    thetas = np.arange(0,maxAngle)
+    suites = []
 
-    data = getSweepData(90)
-    print (data)
+    for theta in thetas:
+        suites.append(Lidar(rs))
 
-    joint.Update(data)
+    numRuns = 5
+    for run in range(numRuns):
+        data = getSweepData(maxAngle)
+    #print (data)
+        UpdateSuites(suites, data)
+        plotPolar(suites)
+
     
-    # thinkplot.Contour(joint.GetDict(), contour=False, pcolor=True)
-    # thinkplot.Show(xlabel='X', ylabel='Y')
-
-    joint.Update(data)
-
-    for hypo, prob in joint.Items():
-        print(hypo, prob)
-
-    plotPolar(joint)
-
-    # thinkplot.Contour(joint.GetDict(), contour=False, pcolor=True)
-    # thinkplot.Show(xlabel='X', ylabel='Y')
-
-    # TODO: plot the marginals and print the posterior means
 
 
 if __name__ == '__main__':
